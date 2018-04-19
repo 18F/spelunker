@@ -2,6 +2,8 @@
 
 A super-lightweight web application that runs [domain-scan](https://github.com/18f/domain-scan) to collect and make downloadable up-to-date lists of federal .gov web services.
 
+First-time run requires `python manage.py init` to set up the local sqlite db.
+
 ### Public domain
 
 This project is in the worldwide [public domain](LICENSE.md). As stated in [CONTRIBUTING](CONTRIBUTING.md):

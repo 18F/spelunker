@@ -1,0 +1,14 @@
+factory_boy
+flask
+flask-restful
+flask-migrate
+flask-sqlalchemy
+flask-marshmallow
+flask-jwt-extended
+marshmallow-sqlalchemy
+passlib
+publicsuffix
+pytest
+pytest_factoryboy
+pytest_flask
+tox
