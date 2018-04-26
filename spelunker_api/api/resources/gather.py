@@ -12,9 +12,9 @@ import re
 import requests
 import uuid
 
-CSV_CACHE_REFRESH_INTERVAL = 3600  # 1 hour
+CSV_CACHE_REFRESH = 3600  # 1 hour
 PUBLIC_SUFFIX_LIST_URL = 'https://publicsuffix.org/list/public_suffix_list.dat'
-PSL_CACHE_REFRESH_INTERVAL = 86400  # 1 day
+PSL_CACHE_REFRESH = 86400  # 1 day
 
 
 class GatherHome(Resource):
@@ -35,11 +35,7 @@ class GatherHome(Resource):
                             location="form", action="append")
         args = {k: v for (k, v) in parser.parse_args(strict=True).items() if v
                 is not None}
-        fnames = []
-        for url in args["url"]:
-            fname = self.get_from_cache_or_download(url,
-                                                    CSV_CACHE_REFRESH_INTERVAL)
-            fnames.append(fname)
+        fnames = [self.load_url(url, CSV_CACHE_REFRESH) for url in args["url"]]
 
         # accumulate list of sources
         # for now, assume series of URLs.
@@ -53,8 +49,7 @@ class GatherHome(Resource):
         headers = ["Domain", "Base Domain"]
         stamp = int(datetime.datetime.now().timestamp() * 1_000_000)
         outpath = Path(self.STORAGE, "%s.csv" % stamp)
-        psl_fname = self.get_from_cache_or_download(PUBLIC_SUFFIX_LIST_URL,
-                                                    PSL_CACHE_REFRESH_INTERVAL)
+        psl_fname = self.load_url(PUBLIC_SUFFIX_LIST_URL, PSL_CACHE_REFRESH)
         pslf = Path(self.STORAGE, psl_fname).resolve().open(encoding="utf-8")
         psl = PublicSuffixList(pslf)
 
@@ -66,19 +61,22 @@ class GatherHome(Resource):
                 csv_writer.writerow(row)
         return send_file(str(outpath.resolve()), mimetype="text/x-csv")
 
-    def get_from_cache_or_download(self, url: str, interval: int) -> str:
+    def load_url(self, url: str, interval: int) -> str:
         print("Fetching: %s" % url)
         response = requests.get(url, stream=True)
         response.raise_for_status()
-        fname = get_filename_from_cd(
-            response.headers.get("content-disposition"))
+        fname = get_filename_from_cd(response, url)
         if not fname:
             parsed = urlparse(url)
             fname = Path(parsed.path).name
         dburl = Url.query.filter_by(url=url).first()
-        filestorage = "%s.csv" % uuid.uuid4().hex
         if not dburl:
             print("No cache hit")
+            print("Fetching: %s" % url)
+            response = requests.get(url, stream=True)
+            response.raise_for_status()
+            fname = get_filename_from_cd(response, url)
+            filestorage = "%s.csv" % uuid.uuid4().hex
             dest = Path(current_app.root_path, "storage", filestorage)
             with dest.open("wb") as f:
                 for block in response.iter_content(1024):
@@ -95,6 +93,8 @@ class GatherHome(Resource):
                 return dburl.filestorage
             else:
                 print("Cache entry too old")
+                response = requests.get(url, stream=True)
+                response.raise_for_status()
                 dest = Path(self.STORAGE, dburl.filestorage)
                 with dest.open("wb") as f:
                     for block in response.iter_content(1024):
@@ -104,16 +104,17 @@ class GatherHome(Resource):
                 return dburl.filestorage
 
 
-def get_filename_from_cd(cd: str) -> str:
+def get_filename_from_cd(response: requests.Response, url: str) -> str:
     """
-    Get filename from content-disposition
+    Get filename from content-disposition with fallback to last part of URL.
     """
-    if not cd:
-        return None
-    fname = re.findall('filename=(.+)', cd)
-    if len(fname) == 0:
-        return None
-    return fname[0]
+    cd = response.headers.get("content-disposition")
+    if cd:
+        fname = re.findall('filename=(.+)', cd)
+        if len(fname):
+            return fname[0]
+    parsed = urlparse(url)
+    return Path(parsed.path).name
 
 
 def load_domains(domain_csv: Path) -> List[str]:
