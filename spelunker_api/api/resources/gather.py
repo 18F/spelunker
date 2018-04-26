@@ -12,9 +12,9 @@ import re
 import requests
 import uuid
 
-CSV_CACHE_REFRESH_INTERVAL = 60
+CSV_CACHE_REFRESH_INTERVAL = 3600  # 1 hour
 PUBLIC_SUFFIX_LIST_URL = 'https://publicsuffix.org/list/public_suffix_list.dat'
-PSL_CACHE_REFRESH_INTERVAL = 7200
+PSL_CACHE_REFRESH_INTERVAL = 86400  # 1 day
 
 
 class GatherHome(Resource):
@@ -47,8 +47,7 @@ class GatherHome(Resource):
         domains = []
         for fname in fnames:
             fpath = Path(self.STORAGE, fname).resolve()
-            results = load_domains(fpath)
-            domains.extend(results)
+            domains.extend(load_domains(fpath))
 
         # TODO: add option to sort the domains.
         headers = ["Domain", "Base Domain"]
@@ -66,15 +65,6 @@ class GatherHome(Resource):
                 row = [domain, psl.get_public_suffix(domain)]
                 csv_writer.writerow(row)
         return send_file(str(outpath.resolve()), mimetype="text/x-csv")
-
-        '''
-        return {
-            "msg": "user updated",
-            "args": args,
-            "unknown_args": request.unparsed_arguments,
-            "fnames": fnames,
-        }
-        '''
 
     def get_from_cache_or_download(self, url: str, interval: int) -> str:
         print("Fetching: %s" % url)
