@@ -1,0 +1,46 @@
+version: '2.1'
+services:
+  persistent_db:
+    image: postgres:9.4
+    volumes:
+      - database_data:/var/lib/postgresql/data
+  persistent_redis:
+    image: redis:4.0.9
+    volumes:
+      - redis_data:/var/lib/redis/data
+    ports: 
+      - 6379:6379
+  api:
+    image: python:3.6.4
+    working_dir: /usr/src/app/
+    stdin_open: true
+    tty: true
+    entrypoint: .docker/activate_then .docker/wait_for_db_then
+    command: ./run_api.sh
+    environment:
+      SHELL: /bin/sh
+      PORT: 8000
+      DEBUG: ${DEBUG:-true}
+      FLASK_APP: autoapp.py
+      FLASK_DEBUG: "True"
+      FLASK_RUN_PORT: 8000
+      USE_POLLING: ${USE_POLLING:-false}
+      DATABASE_URL: postgres://postgres@persistent_db/postgres
+      TMPDIR: /tmp
+      USING_SSL: "False"
+
+      # The following settings are to maintain environment parity between the
+      # docker-compose configuration for local development and the cloud.gov
+      # staging and production configurations.
+      VCAP_APPLICATION: >
+        {"uris": ["localhost", "0.0.0.0", "127.0.0.1", "api"]}
+    ports:
+      - 8001:8000
+    volumes:
+      - .:/usr/src/app:delegated
+    depends_on:
+      - persistent_db
+      - persistent_redis
+volumes:
+  database_data:
+  redis_data:

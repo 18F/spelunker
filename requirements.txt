@@ -1,3 +1,4 @@
+celery
 factory_boy
 flask
 flask-restful
@@ -11,5 +12,6 @@ publicsuffix
 pytest
 pytest_factoryboy
 pytest_flask
+redis
 requests
 tox

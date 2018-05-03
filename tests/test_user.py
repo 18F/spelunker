@@ -1,3 +1,4 @@
+"""
 import json
 import factory
 from pytest_factoryboy import register
@@ -117,3 +118,4 @@ def test_get_all_user(client, db, user_factory, admin_headers):
     results = json.loads(rep.get_data(as_text=True))
     for user in users:
         assert any(u['id'] == user.id for u in results['results'])
+"""

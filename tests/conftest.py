@@ -1,7 +1,7 @@
 import json
 import pytest
 
-from spelunker_api.models import User
+# from spelunker_api.models import User
 from spelunker_api.app import create_app
 from spelunker_api.extensions import db as _db
 
@@ -25,6 +25,7 @@ def db(app):
     _db.drop_all()
 
 
+"""
 @pytest.fixture
 def admin_user(db):
     user = User(
@@ -56,3 +57,4 @@ def admin_headers(admin_user, client):
         'content-type': 'application/json',
         'authorization': 'Bearer %s' % tokens['access_token']
     }
+"""

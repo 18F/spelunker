@@ -1,0 +1,27 @@
+#!/bin/bash
+
+#if [ -n "$DEBUG" ]; then
+#  if [ ! -d .venv-dev ]; then
+#    python -m venv .venv-dev
+#  fi
+#  source .venv-dev/bin/activate
+#else
+#  if [ ! -d .venv-prod ]; then
+#    python -m venv .venv-prod
+#  fi
+#  source .venv-prod/bin/activate
+#fi
+
+echo "WTF"
+
+if ! [ -x "$(command -v pipenv)" ]; then
+  pip install pipenv
+fi
+
+if [ -n "$DEBUG" ]; then
+  pipenv install -r requirements.txt
+else
+  pipenv install -r requirements.txt
+fi
+
+exec "$@"
