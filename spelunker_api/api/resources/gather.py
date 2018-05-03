@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import List
 from urllib.parse import urlparse
 from celery import Celery
-from flask import current_app, send_file
+from flask import Flask, send_file
 from flask_restful import reqparse, Resource
 from publicsuffix import PublicSuffixList
 from spelunker_api.extensions import db
@@ -35,7 +35,7 @@ def make_celery(app):
     celery.Task = ContextTask
     return celery
 
-
+current_app = Flask("spelunker_api")
 current_app.config.update(
     CELERY_BROKER_URL='redis://localhost:6379',
     CELERY_RESULT_BACKEND='redis://localhost:6379'
@@ -57,6 +57,7 @@ class GatherHome(Resource):
         return {"gatherers": "list of available gatherers goes here?"}
 
     def post(self) -> str:
+        current_app = Flask("spelunker_api")
         self.STORAGE = Path(current_app.root_path, "storage")
         parser = reqparse.RequestParser()
         parser.add_argument("gatherers", type=str,
@@ -78,7 +79,7 @@ class GatherHome(Resource):
 
         domains = set()
 
-        fnames = [load_url(self.STORAG, url, CSV_CACHE_REFRESH)
+        fnames = [load_url(self.STORAGE, url, CSV_CACHE_REFRESH)
                   for url in args["url"]]
         suffixes = args.get("suffix", [])
 
@@ -100,7 +101,8 @@ class GatherHome(Resource):
         headers = ["Domain", "Base Domain"]
         stamp = int(datetime.datetime.now().timestamp() * 1_000_000)
         outpath = Path(self.STORAGE, "%s.csv" % stamp)
-        psl_fname = self.load_url(PUBLIC_SUFFIX_LIST_URL, PSL_CACHE_REFRESH)
+        psl_fname = load_url(self.STORAGE, PUBLIC_SUFFIX_LIST_URL,
+                             PSL_CACHE_REFRESH)
         pslf = Path(self.STORAGE, psl_fname).resolve().open(encoding="utf-8")
         psl = PublicSuffixList(pslf)
 
@@ -118,6 +120,7 @@ class GatherHome(Resource):
 
 def load_url(storage: werkzeug.datastructures.FileStorage, url: str,
              interval: int) -> str:
+    current_app = Flask("spelunker_api")
     if current_app.testing:
         if url == "https://analytics.usa.gov/data/live/sites.csv":
             print("returning test_sites.csv")
