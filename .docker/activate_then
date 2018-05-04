@@ -1,18 +1,6 @@
 #!/bin/bash
 
-#if [ -n "$DEBUG" ]; then
-#  if [ ! -d .venv-dev ]; then
-#    python -m venv .venv-dev
-#  fi
-#  source .venv-dev/bin/activate
-#else
-#  if [ ! -d .venv-prod ]; then
-#    python -m venv .venv-prod
-#  fi
-#  source .venv-prod/bin/activate
-#fi
-
-echo "WTF"
+# adduser --disabled-password --gecos '' celeryuser
 
 if ! [ -x "$(command -v pipenv)" ]; then
   pip install pipenv
@@ -23,5 +11,9 @@ if [ -n "$DEBUG" ]; then
 else
   pipenv install -r requirements.txt
 fi
+
+
+pipenv run celery -A spelunker_api.app.celery worker&
+pipenv run python manage.py init
 
 exec "$@"

@@ -1,12 +1,14 @@
 from pathlib import Path
 from typing import List
 from urllib.parse import urlparse
-from celery import Celery
+from celery import Celery, chord
 from flask import Flask, send_file
 from flask_restful import reqparse, Resource
 from publicsuffix import PublicSuffixList
 from spelunker_api.extensions import db
 from spelunker_api.models import Url
+from spelunker_api.tasks import load_url, handle_downloaded_urls, add, addcb
+import spelunker_api.tasks
 import csv
 import datetime
 import re
@@ -19,34 +21,13 @@ PUBLIC_SUFFIX_LIST_URL = 'https://publicsuffix.org/list/public_suffix_list.dat'
 PSL_CACHE_REFRESH = 86400  # 1 day
 
 
-def make_celery(app):
-    celery = Celery(app.import_name,
-                    backend=app.config['CELERY_RESULT_BACKEND'],
-                    broker=app.config['CELERY_BROKER_URL'])
-    celery.conf.update(app.config)
-    TaskBase = celery.Task
 
-    class ContextTask(TaskBase):
-        abstract = True
-
-        def __call__(self, *args, **kwargs):
-            with app.app_context():
-                return TaskBase.__call__(self, *args, **kwargs)
-    celery.Task = ContextTask
-    return celery
-
-current_app = Flask("spelunker_api")
-current_app.config.update(
-    CELERY_BROKER_URL='redis://localhost:6379',
-    CELERY_RESULT_BACKEND='redis://localhost:6379'
-)
-celery = make_celery(current_app)
-
-
+'''
 @celery.task()
 def sample_task(a, b):
 
     return a + b
+'''
 
 
 class GatherHome(Resource):
@@ -58,7 +39,7 @@ class GatherHome(Resource):
 
     def post(self) -> str:
         current_app = Flask("spelunker_api")
-        self.STORAGE = Path(current_app.root_path, "storage")
+        self.STORAGE = Path(current_app.root_path, "storage").resolve()
         parser = reqparse.RequestParser()
         parser.add_argument("gatherers", type=str,
                             help="List of gatherers to use",
@@ -79,8 +60,58 @@ class GatherHome(Resource):
 
         domains = set()
 
-        fnames = [load_url(self.STORAGE, url, CSV_CACHE_REFRESH)
-                  for url in args["url"]]
+        # fnames = [load_url(self.STORAGE, url, CSV_CACHE_REFRESH) for url in args["url"]]
+        urls_to_fetch = []
+        urls_fetched = []
+        for url in args["url"]:
+            if current_app.testing:
+                if url == "https://analytics.usa.gov/data/live/sites.csv":
+                    print("returning test_sites.csv")
+                    urls_fetched.append("test_sites.csv")
+                    continue
+                elif url == PUBLIC_SUFFIX_LIST_URL:
+                    print("returning test_public_suffix.csv")
+                    urls_fetched.append("test_public_suffix.csv")
+                    continue
+                else:
+                    raise
+
+            dburl = Url.query.filter_by(url=url).first()
+            if not dburl:
+                urls_to_fetch.append(url)
+            else:
+                delta = datetime.datetime.utcnow() - dburl.timestamp
+                if current_app.testing or (delta.seconds < interval):
+                    print(current_app.testing)
+                    print("Cache hit")
+                    urls_fetched.append(dburl.filestorage)
+                else:
+                    print("Cache entry too old")
+                    urls_to_fetch.append(url)
+                    """
+                    response = requests.get(url, stream=True)
+                    response.raise_for_status()
+                    dest = Path(storage, dburl.filestorage)
+                    with dest.open("wb") as f:
+                        for block in response.iter_content(1024):
+                            f.write(block)
+                    dburl.timestamp = datetime.datetime.utcnow()
+                    db.session.commit()
+                    return dburl.filestorage
+                    """
+
+
+        """
+        res = chord((load_url.s(str(self.STORAGE), url, CSV_CACHE_REFRESH,
+                                PUBLIC_SUFFIX_LIST_URL) for url in
+                     urls_to_fetch), handle_downloaded_urls.s())()
+        res.get()
+        """
+        res = chord((add.s(_) for _ in range(10)), addcb.s())()
+        res.get()
+
+
+        """
         suffixes = args.get("suffix", [])
 
         if "file" in args:
@@ -116,74 +147,11 @@ class GatherHome(Resource):
                 row = [domain, psl.get_public_suffix(domain)]
                 csv_writer.writerow(row)
         return send_file(str(outpath.resolve()), mimetype="text/x-csv")
+        """
 
 
-def load_url(storage: werkzeug.datastructures.FileStorage, url: str,
-             interval: int) -> str:
-    current_app = Flask("spelunker_api")
-    if current_app.testing:
-        if url == "https://analytics.usa.gov/data/live/sites.csv":
-            print("returning test_sites.csv")
-            return "test_sites.csv"
-        elif url == PUBLIC_SUFFIX_LIST_URL:
-            print("returning test_public_suffix.csv")
-            return "test_public_suffix.csv"
-        else:
-            raise
-    print("Fetching: %s" % url)
-    response = requests.get(url, stream=True)
-    response.raise_for_status()
-    fname = get_filename_from_cd(response, url)
-    if not fname:
-        parsed = urlparse(url)
-        fname = Path(parsed.path).name
-    dburl = Url.query.filter_by(url=url).first()
-    if not dburl:
-        print("No cache hit")
-        print("Fetching: %s" % url)
-        response = requests.get(url, stream=True)
-        response.raise_for_status()
-        fname = get_filename_from_cd(response, url)
-        filestorage = "%s.csv" % uuid.uuid4().hex
-        dest = Path(current_app.root_path, "storage", filestorage)
-        with dest.open("wb") as f:
-            for block in response.iter_content(1024):
-                f.write(block)
-        new_dburl = Url(url=url, filename=fname, filestorage=filestorage)
-        db.session.add(new_dburl)
-        db.session.commit()
-        return filestorage
-    else:
-        print("Possible cache hit")
-        delta = datetime.datetime.utcnow() - dburl.timestamp
-        if current_app.testing or (delta.seconds < interval):
-            print(current_app.testing)
-            print("Cache hit")
-            return dburl.filestorage
-        else:
-            print("Cache entry too old")
-            response = requests.get(url, stream=True)
-            response.raise_for_status()
-            dest = Path(storage, dburl.filestorage)
-            with dest.open("wb") as f:
-                for block in response.iter_content(1024):
-                    f.write(block)
-            dburl.timestamp = datetime.datetime.utcnow()
-            db.session.commit()
-            return dburl.filestorage
 
 
-def get_filename_from_cd(response: requests.Response, url: str) -> str:
-    """
-    Get filename from content-disposition with fallback to last part of URL.
-    """
-    cd = response.headers.get("content-disposition")
-    if cd:
-        fname = re.findall('filename=(.+)', cd)
-        if len(fname):
-            return fname[0]
-    parsed = urlparse(url)
-    return Path(parsed.path).name
 
 
 def load_domains(domain_csv: Path) -> List[str]:
@@ -202,3 +170,6 @@ def load_domains(domain_csv: Path) -> List[str]:
 
             domains.append(row[0])
     return domains
+
+"""
+"""

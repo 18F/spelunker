@@ -1,3 +1,4 @@
+from celery import Celery
 from flask import Flask
 
 from spelunker_api import api
@@ -44,3 +45,28 @@ def register_blueprints(app):
     """register all blueprints for application
     """
     app.register_blueprint(api.views.blueprint)
+
+
+def make_celery(app):
+    celery = Celery(app.import_name,
+                    backend=app.config['CELERY_RESULT_BACKEND'],
+                    broker=app.config['CELERY_BROKER_URL'])
+    celery.conf.update(app.config)
+    TaskBase = celery.Task
+
+    class ContextTask(TaskBase):
+        abstract = True
+
+        def __call__(self, *args, **kwargs):
+            with app.app_context():
+                return TaskBase.__call__(self, *args, **kwargs)
+    celery.Task = ContextTask
+    return celery
+
+current_app = Flask("spelunker_api")
+current_app.config.update(
+    CELERY_BROKER_URL='redis://persistent_redis:6379',
+    CELERY_RESULT_BACKEND='redis://persistent_redis:6379'
+)
+celery = make_celery(current_app)
+

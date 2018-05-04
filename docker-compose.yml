@@ -24,6 +24,7 @@ services:
       FLASK_APP: autoapp.py
       FLASK_DEBUG: "True"
       FLASK_RUN_PORT: 8000
+      PIPENV_VENV_IN_PROJECT: "true"
       USE_POLLING: ${USE_POLLING:-false}
       DATABASE_URL: postgres://postgres@persistent_db/postgres
       TMPDIR: /tmp
