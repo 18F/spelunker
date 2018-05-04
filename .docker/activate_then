@@ -2,18 +2,17 @@
 
 # adduser --disabled-password --gecos '' celeryuser
 
-if ! [ -x "$(command -v pipenv)" ]; then
-  pip install pipenv
-fi
+#if ! [ -x "$(command -v pipenv)" ]; then
+#  pip install pipenv
+#fi
+#
+#if [ -n "$DEBUG" ]; then
+#  pipenv install -r requirements.txt
+#else
+#  pipenv install -r requirements.txt
+#fi
 
-if [ -n "$DEBUG" ]; then
-  pipenv install -r requirements.txt
-else
-  pipenv install -r requirements.txt
-fi
-
-
-pipenv run celery -A spelunker_api.app.celery worker&
-pipenv run python manage.py init
+celery -A spelunker_api.app.celery worker&
+python manage.py init
 
 exec "$@"
